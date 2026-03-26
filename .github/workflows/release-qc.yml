@@ -1,0 +1,56 @@
+name: release-qc
+
+on:
+  release:
+    types:
+      - published
+
+jobs:
+  release:
+    runs-on: macos-15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Package release asset
+        run: |
+          chmod +x Scripts/package-release.sh
+          VERSION="${GITHUB_REF_NAME#v}"
+          Scripts/package-release.sh aarch64-apple-darwin "$VERSION"
+
+      - name: Upload release asset
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.event.release.tag_name }}" \
+            dist/qc-aarch64-apple-darwin.tar.gz \
+            --clobber
+
+      - name: Dispatch Homebrew tap update
+        env:
+          TAP_REPO_TOKEN: ${{ secrets.TAP_REPO_TOKEN }}
+        run: |
+          if [[ -z "${TAP_REPO_TOKEN:-}" ]]; then
+            echo "TAP_REPO_TOKEN is not configured. Skipping homebrew-tap dispatch."
+            exit 0
+          fi
+
+          export GH_TOKEN="$TAP_REPO_TOKEN"
+          VERSION="${GITHUB_REF_NAME#v}"
+          SHA256_VALUE="$(cat dist/qc-aarch64-apple-darwin.tar.gz.sha256)"
+          gh api \
+            --method POST \
+            repos/turastory/homebrew-tap/dispatches \
+            -f event_type=qc_release_published \
+            -F client_payload[version]="$VERSION" \
+            -F client_payload[release_tag]="${{ github.event.release.tag_name }}" \
+            -F client_payload[sha256]="$SHA256_VALUE" \
+            -F client_payload[asset_name]="qc-aarch64-apple-darwin.tar.gz" \
+            -F client_payload[app_repo]="${{ github.repository }}"

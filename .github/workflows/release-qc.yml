@@ -44,7 +44,19 @@ jobs:
 
           export GH_TOKEN="$TAP_REPO_TOKEN"
           VERSION="${GITHUB_REF_NAME#v}"
-          SHA256_VALUE="$(cat dist/qc-aarch64-apple-darwin.tar.gz.sha256)"
+          SHA256_VALUE="$(
+            gh release view "${{ github.event.release.tag_name }}" \
+              --repo "${{ github.repository }}" \
+              --json assets \
+              --jq '.assets[] | select(.name=="qc-aarch64-apple-darwin.tar.gz").digest'
+          )"
+          SHA256_VALUE="${SHA256_VALUE#sha256:}"
+
+          if [[ -z "$SHA256_VALUE" ]]; then
+            echo "Failed to resolve uploaded asset digest."
+            exit 1
+          fi
+
           gh api \
             --method POST \
             repos/turastory/homebrew-tap/dispatches \

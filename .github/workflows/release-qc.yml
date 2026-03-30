@@ -1,6 +1,9 @@
 name: release-qc
 
 on:
+  push:
+    tags:
+      - "v*"
   release:
     types:
       - published
@@ -10,6 +13,8 @@ jobs:
     runs-on: macos-15
     permissions:
       contents: write
+    env:
+      RELEASE_TAG: ${{ github.event_name == 'release' && github.event.release.tag_name || github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -22,14 +27,28 @@ jobs:
       - name: Package release asset
         run: |
           chmod +x Scripts/package-release.sh
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           Scripts/package-release.sh aarch64-apple-darwin "$VERSION"
+
+      - name: Ensure release exists on tag push
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${RELEASE_TAG}" >/dev/null 2>&1; then
+            echo "Release ${RELEASE_TAG} already exists."
+          else
+            gh release create \
+              "${RELEASE_TAG}" \
+              --title "${RELEASE_TAG}" \
+              --generate-notes
+          fi
 
       - name: Upload release asset
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.event.release.tag_name }}" \
+          gh release upload "${RELEASE_TAG}" \
             dist/qc-aarch64-apple-darwin.tar.gz \
             --clobber
 
@@ -43,9 +62,9 @@ jobs:
           fi
 
           export GH_TOKEN="$TAP_REPO_TOKEN"
-          VERSION="${GITHUB_REF_NAME#v}"
+          VERSION="${RELEASE_TAG#v}"
           SHA256_VALUE="$(
-            gh release view "${{ github.event.release.tag_name }}" \
+            gh release view "${RELEASE_TAG}" \
               --repo "${{ github.repository }}" \
               --json assets \
               --jq '.assets[] | select(.name=="qc-aarch64-apple-darwin.tar.gz").digest'
@@ -62,7 +81,7 @@ jobs:
             repos/turastory/homebrew-tap/dispatches \
             -f event_type=qc_release_published \
             -F client_payload[version]="$VERSION" \
-            -F client_payload[release_tag]="${{ github.event.release.tag_name }}" \
+            -F client_payload[release_tag]="${RELEASE_TAG}" \
             -F client_payload[sha256]="$SHA256_VALUE" \
             -F client_payload[asset_name]="qc-aarch64-apple-darwin.tar.gz" \
             -F client_payload[app_repo]="${{ github.repository }}"

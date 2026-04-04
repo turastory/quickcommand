@@ -721,13 +721,10 @@ mod tests {
         )
         .expect("copy flow should succeed");
 
-        assert_eq!(
-            ui.progress_events,
-            vec![
-                "start:Generating response...".to_string(),
-                "stop".to_string()
-            ]
-        );
+        assert_eq!(ui.progress_events.len(), 2);
+        assert!(ui.progress_events[0].starts_with("start:"));
+        assert!(ui.progress_events[0].contains("qwen3.5:9b"));
+        assert_eq!(ui.progress_events[1], "stop");
     }
 
     #[test]
@@ -762,15 +759,13 @@ mod tests {
         )
         .expect("clarification flow should succeed");
 
-        assert_eq!(
-            ui.progress_events,
-            vec![
-                "start:Generating response...".to_string(),
-                "stop".to_string(),
-                "start:Generating response...".to_string(),
-                "stop".to_string()
-            ]
-        );
+        assert_eq!(ui.progress_events.len(), 4);
+        assert!(ui.progress_events[0].starts_with("start:"));
+        assert!(ui.progress_events[0].contains("qwen3.5:9b"));
+        assert_eq!(ui.progress_events[1], "stop");
+        assert!(ui.progress_events[2].starts_with("start:"));
+        assert!(ui.progress_events[2].contains("qwen3.5:9b"));
+        assert_eq!(ui.progress_events[3], "stop");
     }
 
     #[test]
@@ -795,12 +790,17 @@ mod tests {
         .expect_err("backend error should bubble up");
 
         assert!(matches!(error, QuickcommandError::OllamaApi(_)));
-        assert_eq!(
-            ui.progress_events,
-            vec![
-                "start:Generating response...".to_string(),
-                "stop".to_string()
-            ]
-        );
+        assert_eq!(ui.progress_events.len(), 2);
+        assert!(ui.progress_events[0].starts_with("start:"));
+        assert!(ui.progress_events[0].contains("qwen3.5:9b"));
+        assert_eq!(ui.progress_events[1], "stop");
+    }
+
+    #[test]
+    fn progress_message_includes_model_name() {
+        let message = progress_message_for_model("qwen3.5:9b");
+
+        assert!(message.contains("qwen3.5:9b"));
+        assert_ne!(message.trim(), "qwen3.5:9b");
     }
 }

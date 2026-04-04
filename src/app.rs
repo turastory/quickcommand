@@ -5,6 +5,7 @@ use std::thread::{self, JoinHandle};
 use std::time::Duration;
 
 use clap::Parser;
+use rand::seq::SliceRandom;
 
 use crate::backend::{Backend, OllamaBackend};
 use crate::cli::{Cli, Command as CliCommand, ConfigCommand};
@@ -21,9 +22,25 @@ use crate::safety::is_destructive;
 use crate::shell_integration::{home_dir, install_zsh_integration, zshrc_path};
 
 const MAX_CLARIFICATIONS: usize = 2;
-const PROGRESS_MESSAGE: &str = "Generating response...";
+const PROGRESS_TEMPLATES: &[&str] = &[
+    "{} is working hard...",
+    "{} is sharpening a shell command...",
+    "{} is translating intent into terminal magic...",
+    "{} is lining up the next terminal move...",
+    "{} is rummaging through shell lore...",
+];
+const DEFAULT_PROGRESS_TEMPLATE: &str = "{} is working hard...";
 const PROGRESS_DELAY: Duration = Duration::from_millis(120);
 const PROGRESS_INTERVAL: Duration = Duration::from_millis(80);
+
+fn progress_message_for_model(model: &str) -> String {
+    let template = PROGRESS_TEMPLATES
+        .choose(&mut rand::thread_rng())
+        .copied()
+        .unwrap_or(DEFAULT_PROGRESS_TEMPLATE);
+
+    template.replacen("{}", model, 1)
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputMode {
@@ -397,8 +414,9 @@ pub fn run_task_with_deps<B: Backend, U: Ui, E: Executor>(
             task: task.to_string(),
             clarification_history: clarification_history.clone(),
         };
+        let progress_message = progress_message_for_model(&config.ollama_model);
 
-        match generate_with_progress(backend, ui, &request, context)? {
+        match generate_with_progress(backend, ui, &request, context, &progress_message)? {
             ModelReply::Command(reply) => match config.mode {
                 Mode::Copy => match output_mode {
                     OutputMode::EmitCommand => {
@@ -454,8 +472,9 @@ fn generate_with_progress<B: Backend, U: Ui>(
     ui: &mut U,
     request: &GenerationRequest,
     context: &RuntimeContext,
+    progress_message: &str,
 ) -> Result<ModelReply> {
-    ui.start_progress(PROGRESS_MESSAGE)?;
+    ui.start_progress(progress_message)?;
     let generate_result = backend.generate(request, context);
     let stop_result = ui.stop_progress();
 
